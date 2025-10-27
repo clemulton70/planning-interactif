@@ -1,22 +1,10 @@
-<<<<<<< HEAD
 import React from 'react'
-   import ReactDOM from 'react-dom/client'
-   import App from './App'
-   import './index.css'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './index.css'
 
-   ReactDOM.createRoot(document.getElementById('root')).render(
-     <React.StrictMode>
-       <App />
-     </React.StrictMode>,
-=======
-import React from 'react'
-   import ReactDOM from 'react-dom/client'
-   import App from './App'
-   import './index.css'
-
-   ReactDOM.createRoot(document.getElementById('root')).render(
-     <React.StrictMode>
-       <App />
-     </React.StrictMode>,
->>>>>>> 074265f797e4461365628c75517b4bc12a5cf346
-   )
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)

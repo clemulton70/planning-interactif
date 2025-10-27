@@ -1,40 +1,22 @@
-import React, { useState } from 'react';
-import { Calendar, Clock, User, Plus, X, Eye, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, Clock, User, Plus, X, Eye, Edit2, Trash2, LogOut, LogIn } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
-const InteractivePlanning = () => {
-  const [contracts, setContracts] = useState([
-    {
-      id: 1,
-      name: "Projet Alpha",
-      date: "2025-10-25",
-      endDate: "2025-10-27",
-      person: "Marie Dupont",
-      startTime: "09:00",
-      endTime: "17:00",
-      status: "En cours",
-      description: "Développement du module client",
-      client: "Entreprise XYZ"
-    },
-    {
-      id: 2,
-      name: "Formation Beta",
-      date: "2025-10-28",
-      endDate: "2025-10-28",
-      person: "Jean Martin",
-      startTime: "14:00",
-      endTime: "18:00",
-      status: "Planifié",
-      description: "Formation équipe technique",
-      client: "Tech Corp"
-    }
-  ]);
-
+const App = () => {
+  const [contracts, setContracts] = useState([]);
   const [view, setView] = useState('overview');
   const [currentMonth, setCurrentMonth] = useState(9);
   const [currentYear, setCurrentYear] = useState(2025);
   const [selectedContract, setSelectedContract] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [authMode, setAuthMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  
   const [formData, setFormData] = useState({
     name: '',
     date: '',
@@ -64,6 +46,72 @@ const InteractivePlanning = () => {
     'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
   ];
 
+  useEffect(() => {
+    checkUser();
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user || null);
+      if (session?.user) {
+        fetchContracts();
+      }
+    });
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const checkUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    setUser(session?.user || null);
+    if (session?.user) {
+      await fetchContracts();
+    }
+    setLoading(false);
+  };
+
+  const fetchContracts = async () => {
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*')
+      .order('date', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching contracts:', error);
+    } else {
+      setContracts(data || []);
+    }
+  };
+
+  const handleSignUp = async () => {
+    setAuthError('');
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      alert('Inscription réussie ! Vérifiez votre email pour confirmer votre compte.');
+    }
+  };
+
+  const handleSignIn = async () => {
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setContracts([]);
+  };
+
   const handleAddNew = () => {
     setFormData({
       name: '',
@@ -81,20 +129,40 @@ const InteractivePlanning = () => {
   };
 
   const handleEdit = (contract) => {
-    setFormData(contract);
+    setFormData({
+      id: contract.id,
+      name: contract.name,
+      date: contract.date,
+      endDate: contract.end_date,
+      person: contract.person,
+      startTime: contract.start_time,
+      endTime: contract.end_time,
+      status: contract.status,
+      description: contract.description || '',
+      client: contract.client
+    });
     setEditMode(true);
     setShowModal(true);
     setSelectedContract(null);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer ce contrat ?')) {
-      setContracts(contracts.filter(c => c.id !== id));
-      setSelectedContract(null);
+      const { error } = await supabase
+        .from('contracts')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        alert('Erreur lors de la suppression');
+      } else {
+        setContracts(contracts.filter(c => c.id !== id));
+        setSelectedContract(null);
+      }
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.name || !formData.date || !formData.endDate || !formData.person || !formData.startTime || !formData.endTime || !formData.client) {
       alert('Veuillez remplir tous les champs obligatoires');
       return;
@@ -105,14 +173,40 @@ const InteractivePlanning = () => {
       return;
     }
     
+    const contractData = {
+      name: formData.name,
+      date: formData.date,
+      end_date: formData.endDate,
+      person: formData.person,
+      start_time: formData.startTime,
+      end_time: formData.endTime,
+      status: formData.status,
+      description: formData.description,
+      client: formData.client,
+      user_id: user.id
+    };
+
     if (editMode) {
-      setContracts(contracts.map(c => c.id === formData.id ? formData : c));
+      const { error } = await supabase
+        .from('contracts')
+        .update(contractData)
+        .eq('id', formData.id);
+      
+      if (error) {
+        alert('Erreur lors de la modification');
+      } else {
+        await fetchContracts();
+      }
     } else {
-      const newContract = {
-        ...formData,
-        id: Math.max(0, ...contracts.map(c => c.id)) + 1
-      };
-      setContracts([...contracts, newContract]);
+      const { error } = await supabase
+        .from('contracts')
+        .insert([contractData]);
+      
+      if (error) {
+        alert('Erreur lors de la création');
+      } else {
+        await fetchContracts();
+      }
     }
     setShowModal(false);
   };
@@ -139,8 +233,6 @@ const InteractivePlanning = () => {
     }
   };
 
-  const sortedContracts = [...contracts].sort((a, b) => new Date(a.date) - new Date(b.date));
-
   const getDaysInMonth = (month, year) => {
     return new Date(year, month + 1, 0).getDate();
   };
@@ -154,7 +246,7 @@ const InteractivePlanning = () => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return contracts.filter(c => {
       const startDate = new Date(c.date);
-      const endDate = new Date(c.endDate);
+      const endDate = new Date(c.end_date);
       const currentDate = new Date(dateStr);
       return currentDate >= startDate && currentDate <= endDate;
     });
@@ -193,13 +285,97 @@ const InteractivePlanning = () => {
     return days;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-xl text-gray-700">Chargement...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+          <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Planning Interactif</h1>
+          
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                authMode === 'login' 
+                  ? 'bg-indigo-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Connexion
+            </button>
+            <button
+              onClick={() => setAuthMode('signup')}
+              className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                authMode === 'signup' 
+                  ? 'bg-indigo-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Inscription
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="votre@email.com"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mot de passe
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {authError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {authError}
+              </div>
+            )}
+
+            <button
+              onClick={authMode === 'login' ? handleSignIn : handleSignUp}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+            >
+              <LogIn size={20} />
+              {authMode === 'login' ? 'Se connecter' : "S'inscrire"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-3xl font-bold text-gray-800">Planning Interactif</h1>
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-center flex-wrap">
+              <span className="text-sm text-gray-600">{user.email}</span>
               <button
                 onClick={() => setView(view === 'calendar' ? 'overview' : view === 'overview' ? 'detailed' : 'calendar')}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
@@ -213,6 +389,13 @@ const InteractivePlanning = () => {
               >
                 <Plus size={18} />
                 Nouveau contrat
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+              >
+                <LogOut size={18} />
+                Déconnexion
               </button>
             </div>
           </div>
@@ -296,7 +479,7 @@ const InteractivePlanning = () => {
             </div>
           ) : view === 'overview' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortedContracts.map(contract => (
+              {contracts.map(contract => (
                 <div
                   key={contract.id}
                   onClick={() => setSelectedContract(contract)}
@@ -314,14 +497,14 @@ const InteractivePlanning = () => {
                       <Calendar size={16} className="text-indigo-600" />
                       <span>
                         {new Date(contract.date).toLocaleDateString('fr-FR')}
-                        {contract.date !== contract.endDate && (
-                          <> → {new Date(contract.endDate).toLocaleDateString('fr-FR')}</>
+                        {contract.date !== contract.end_date && (
+                          <> → {new Date(contract.end_date).toLocaleDateString('fr-FR')}</>
                         )}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock size={16} className="text-indigo-600" />
-                      <span>{contract.startTime} - {contract.endTime}</span>
+                      <span>{contract.start_time} - {contract.end_time}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <User size={16} className="text-indigo-600" />
@@ -347,7 +530,7 @@ const InteractivePlanning = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedContracts.map(contract => (
+                  {contracts.map(contract => (
                     <tr key={contract.id} className="border-b hover:bg-gray-50">
                       <td className="p-3">
                         <button
@@ -358,8 +541,8 @@ const InteractivePlanning = () => {
                         </button>
                       </td>
                       <td className="p-3">{new Date(contract.date).toLocaleDateString('fr-FR')}</td>
-                      <td className="p-3">{new Date(contract.endDate).toLocaleDateString('fr-FR')}</td>
-                      <td className="p-3">{contract.startTime} - {contract.endTime}</td>
+                      <td className="p-3">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</td>
+                      <td className="p-3">{contract.start_time} - {contract.end_time}</td>
                       <td className="p-3">{contract.person}</td>
                       <td className="p-3">{contract.client}</td>
                       <td className="p-3">
@@ -394,7 +577,7 @@ const InteractivePlanning = () => {
 
       {selectedContract && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6">
+          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6 max-h-screen overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-2xl font-bold text-gray-800">{selectedContract.name}</h2>
               <button
@@ -412,8 +595,8 @@ const InteractivePlanning = () => {
                   <p className="text-sm text-gray-600">Période</p>
                   <p className="font-semibold">
                     {new Date(selectedContract.date).toLocaleDateString('fr-FR')}
-                    {selectedContract.date !== selectedContract.endDate && (
-                      <> → {new Date(selectedContract.endDate).toLocaleDateString('fr-FR')}</>
+                    {selectedContract.date !== selectedContract.end_date && (
+                      <> → {new Date(selectedContract.end_date).toLocaleDateString('fr-FR')}</>
                     )}
                   </p>
                 </div>
@@ -423,7 +606,7 @@ const InteractivePlanning = () => {
                 <Clock className="text-indigo-600" size={20} />
                 <div>
                   <p className="text-sm text-gray-600">Horaires</p>
-                  <p className="font-semibold">{selectedContract.startTime} - {selectedContract.endTime}</p>
+                  <p className="font-semibold">{selectedContract.start_time} - {selectedContract.end_time}</p>
                 </div>
               </div>
               
@@ -514,7 +697,6 @@ const InteractivePlanning = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Date de fin *
@@ -537,6 +719,10 @@ const InteractivePlanning = () => {
                   onChange={(e) => handleInputChange('status', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 >
+                  <option value="À démarcher">À démarcher</option>
+                  <option value="Mail envoyé">Mail envoyé</option>
+                  <option value="En attente de retour">En attente de retour</option>
+                  <option value="À relancer">À relancer</option>
                   <option value="Planifié">Planifié</option>
                   <option value="En cours">En cours</option>
                   <option value="Terminé">Terminé</option>
@@ -632,4 +818,4 @@ const InteractivePlanning = () => {
   );
 };
 
-export default InteractivePlanning;
+export default App;

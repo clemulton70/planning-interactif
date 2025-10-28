@@ -6,11 +6,17 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default async function handler(req, res) {
   try {
+    console.log('URL:', supabaseUrl);
+    console.log('Key exists:', !!supabaseAnonKey);
+    
     // Récupérer tous les contrats
     const { data: contracts, error } = await supabase
       .from('contracts')
       .select('*')
       .order('date', { ascending: true });
+
+    console.log('Contracts:', contracts);
+    console.log('Error:', error);
 
     if (error) throw error;
 

@@ -4,11 +4,13 @@ import { supabase } from './supabaseClient';
 
 const App = () => {
   const [contracts, setContracts] = useState([]);
+  const [unavailabilities, setUnavailabilities] = useState([]);
   const [view, setView] = useState('overview');
   const [currentMonth, setCurrentMonth] = useState(9);
   const [currentYear, setCurrentYear] = useState(2025);
   const [selectedContract, setSelectedContract] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,12 @@ const App = () => {
     description: '',
     client: ''
   });
+  const [unavailabilityData, setUnavailabilityData] = useState({
+  person: '',
+  startDate: '',
+  endDate: '',
+  reason: ''
+});
 
   const statusColors = {
     'À démarcher': 'bg-purple-100 text-purple-800 border-purple-300',
@@ -210,6 +218,31 @@ const App = () => {
     }
     setShowModal(false);
   };
+  const handleUnavailabilitySubmit = () => {
+  if (!unavailabilityData.person || !unavailabilityData.startDate || !unavailabilityData.endDate) {
+    alert('Veuillez remplir tous les champs obligatoires');
+    return;
+  }
+  
+  if (new Date(unavailabilityData.endDate) < new Date(unavailabilityData.startDate)) {
+    alert('La date de fin doit être postérieure ou égale à la date de début');
+    return;
+  }
+  
+  const newUnavailability = {
+    ...unavailabilityData,
+    id: Math.max(0, ...unavailabilities.map(u => u.id), 0) + 1
+  };
+  
+  setUnavailabilities([...unavailabilities, newUnavailability]);
+  setShowUnavailabilityModal(false);
+  setUnavailabilityData({
+    person: '',
+    startDate: '',
+    endDate: '',
+    reason: ''
+  });
+};
 
   const handleInputChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
@@ -242,15 +275,24 @@ const App = () => {
     return day === 0 ? 6 : day - 1;
   };
 
-  const getContractsForDate = (day, month, year) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return contracts.filter(c => {
-      const startDate = new Date(c.date);
-      const endDate = new Date(c.end_date);
-      const currentDate = new Date(dateStr);
-      return currentDate >= startDate && currentDate <= endDate;
-    });
-  };
+const getContractsForDate = (day, month, year) => {
+  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const contractsOnDate = contracts.filter(c => {
+    const startDate = new Date(c.date);
+    const endDate = new Date(c.end_date);
+    const currentDate = new Date(dateStr);
+    return currentDate >= startDate && currentDate <= endDate;
+  });
+  
+  const unavailabilitiesOnDate = unavailabilities.filter(u => {
+    const startDate = new Date(u.startDate);
+    const endDate = new Date(u.endDate);
+    const currentDate = new Date(dateStr);
+    return currentDate >= startDate && currentDate <= endDate;
+  });
+  
+  return { contracts: contractsOnDate, unavailabilities: unavailabilitiesOnDate };
+};
 
   const renderCalendarMonth = (monthIndex) => {
     const daysInMonth = getDaysInMonth(monthIndex, currentYear);
@@ -261,23 +303,32 @@ const App = () => {
       days.push(<div key={`empty-${i}`} className="min-h-24 border border-gray-200 bg-gray-50"></div>);
     }
     
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayContracts = getContractsForDate(day, monthIndex, currentYear);
+for (let day = 1; day <= daysInMonth; day++) {
+  const { contracts: dayContracts, unavailabilities: dayUnavailabilities } = getContractsForDate(day, monthIndex, currentYear);
       days.push(
         <div key={day} className="min-h-24 border border-gray-200 p-1 bg-white hover:bg-gray-50 transition">
           <div className="font-semibold text-sm text-gray-700 mb-1">{day}</div>
           <div className="space-y-1">
-            {dayContracts.map(contract => (
-              <div
-                key={contract.id}
-                onClick={() => setSelectedContract(contract)}
-                className={`text-xs p-1 rounded cursor-pointer truncate ${statusColors[contract.status]}`}
-                title={`${contract.name} - ${contract.person}`}
-              >
-                {contract.name}
-              </div>
-            ))}
-          </div>
+  {dayContracts.map(contract => (
+    <div
+      key={contract.id}
+      onClick={() => setSelectedContract(contract)}
+      className={`text-xs p-1 rounded cursor-pointer truncate ${statusColors[contract.status]}`}
+      title={`${contract.name} - ${contract.person}`}
+    >
+      {contract.name}
+    </div>
+  ))}
+  {dayUnavailabilities.map(unavailability => (
+    <div
+      key={unavailability.id}
+      className="text-xs p-1 rounded bg-red-100 text-red-800 border border-red-300 truncate"
+      title={`Indispo: ${unavailability.person} - ${unavailability.reason}`}
+    >
+      🚫 {unavailability.person}
+    </div>
+  ))}
+</div>
         </div>
       );
     }
@@ -389,6 +440,13 @@ const App = () => {
               >
                 <Plus size={18} />
                 Nouveau contrat
+              </button>
+              <button
+                onClick={() => setShowUnavailabilityModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition"
+                  >
+                  <Plus size={18} />
+                Indisponibilité
               </button>
               <button
                 onClick={handleSignOut}
@@ -808,6 +866,91 @@ const App = () => {
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
                 >
                   {editMode ? 'Enregistrer' : 'Créer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUnavailabilityModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">Nouvelle indisponibilité</h2>
+              <button
+                onClick={() => setShowUnavailabilityModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Personne concernée *
+                </label>
+                <input
+                  type="text"
+                  value={unavailabilityData.person}
+                  onChange={(e) => setUnavailabilityData({...unavailabilityData, person: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="Ex: Marie Dupont"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date de début *
+                  </label>
+                  <input
+                    type="date"
+                    value={unavailabilityData.startDate}
+                    onChange={(e) => setUnavailabilityData({...unavailabilityData, startDate: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date de fin *
+                  </label>
+                  <input
+                    type="date"
+                    value={unavailabilityData.endDate}
+                    onChange={(e) => setUnavailabilityData({...unavailabilityData, endDate: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Raison (optionnel)
+                </label>
+                <textarea
+                  value={unavailabilityData.reason}
+                  onChange={(e) => setUnavailabilityData({...unavailabilityData, reason: e.target.value})}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="Ex: Congés, Formation, Maladie..."
+                />
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowUnavailabilityModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleUnavailabilitySubmit}
+                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition"
+                >
+                  Ajouter
                 </button>
               </div>
             </div>

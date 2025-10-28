@@ -60,6 +60,7 @@ const App = () => {
       setUser(session?.user || null);
       if (session?.user) {
         fetchContracts();
+        fetchUnavailabilities();
       }
     });
     return () => {
@@ -72,6 +73,7 @@ const App = () => {
     setUser(session?.user || null);
     if (session?.user) {
       await fetchContracts();
+      await fetchUnavailabilities();
     }
     setLoading(false);
   };
@@ -88,6 +90,19 @@ const App = () => {
       setContracts(data || []);
     }
   };
+
+  const fetchUnavailabilities = async () => {
+  const { data, error } = await supabase
+    .from('unavailabilities')
+    .select('*')
+    .order('start_date', { ascending: true });
+  
+  if (error) {
+    console.error('Error fetching unavailabilities:', error);
+  } else {
+    setUnavailabilities(data || []);
+  }
+};
 
   const handleSignUp = async () => {
     setAuthError('');
@@ -218,7 +233,7 @@ const App = () => {
     }
     setShowModal(false);
   };
-  const handleUnavailabilitySubmit = () => {
+const handleUnavailabilitySubmit = async () => {
   if (!unavailabilityData.person || !unavailabilityData.startDate || !unavailabilityData.endDate) {
     alert('Veuillez remplir tous les champs obligatoires');
     return;
@@ -229,12 +244,25 @@ const App = () => {
     return;
   }
   
-  const newUnavailability = {
-    ...unavailabilityData,
-    id: Math.max(0, ...unavailabilities.map(u => u.id), 0) + 1
+  const unavailabilityDbData = {
+    person: unavailabilityData.person,
+    start_date: unavailabilityData.startDate,
+    end_date: unavailabilityData.endDate,
+    reason: unavailabilityData.reason,
+    user_id: user.id
   };
+
+  const { error } = await supabase
+    .from('unavailabilities')
+    .insert([unavailabilityDbData]);
   
-  setUnavailabilities([...unavailabilities, newUnavailability]);
+  if (error) {
+    alert('Erreur lors de la création de l\'indisponibilité');
+    console.error(error);
+  } else {
+    await fetchUnavailabilities();
+  }
+  
   setShowUnavailabilityModal(false);
   setUnavailabilityData({
     person: '',
@@ -285,8 +313,8 @@ const getContractsForDate = (day, month, year) => {
   });
   
   const unavailabilitiesOnDate = unavailabilities.filter(u => {
-    const startDate = new Date(u.startDate);
-    const endDate = new Date(u.endDate);
+    const startDate = new Date(u.start_date);
+    const endDate = new Date(u.end_date);
     const currentDate = new Date(dateStr);
     return currentDate >= startDate && currentDate <= endDate;
   });
